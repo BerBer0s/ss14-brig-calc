@@ -188,18 +188,44 @@ function copyToClipboard(text){
   try{document.execCommand('copy');return Promise.resolve()}catch(e){return Promise.reject(e)}finally{document.body.removeChild(ta)}
 }
 let serverTimer=null;
+let corsQuietUntil=0;
+async function fetchJsonQuiet(url){
+  if(Date.now()<corsQuietUntil)return null;
+  try{
+    const c=new AbortController();const t=setTimeout(()=>c.abort(),4500);
+    const r=await fetch(url,{cache:'no-store',signal:c.signal});clearTimeout(t);
+    if(!r.ok)return null;return await r.json();
+  }catch(e){
+    const msg=String(e&&e.message||e||'');
+    if(msg.includes('Failed to fetch')||msg.includes('CORS')||msg.includes('blocked')||msg.includes('NetworkError'))corsQuietUntil=Date.now()+60000;
+    return null;
+  }
+}
+async function fetchWithFallback(url){
+  const direct=await fetchJsonQuiet(url);
+  if(direct)return direct;
+  const proxies=['https://corsproxy.io/?','https://api.allorigins.win/raw?url='];
+  for(const p of proxies){
+    try{
+      const r=await fetch(p+encodeURIComponent(url),{cache:'no-store'});
+      if(!r.ok)continue;const t=await r.text();try{return JSON.parse(t)}catch(e){continue}
+    }catch(e){continue}
+  }
+  return null;
+}
 function fetchServerTime(){
   const srv=document.getElementById('docServer').value;
   const rt=document.getElementById('roundTime');
   if(serverTimer){clearInterval(serverTimer);serverTimer=null}
   if(!srv){rt.textContent='—';return}
   rt.textContent='Загрузка...';
-  fetch('https://server.ss14.org/'+srv+'/status').then(r=>r.json()).then(d=>{
-    if(!d.round_start_time){rt.textContent='Нет данных';return}
+  const url='https://server.ss14.org/'+srv+'/status';
+  fetchWithFallback(url).then(d=>{
+    if(!d||!d.round_start_time){rt.textContent='Недоступно';return}
     const start=new Date(d.round_start_time);
-    function upd(){const now=new Date();const diff=Math.floor((now-start)/1000);const h=Math.floor(diff/3600);const m=Math.floor((diff%3600)/60);rt.textContent=(h>0?h+'ч ':'')+(m<10?'0':'')+m+' мин (от начала)'}
+    function upd(){const now=new Date();const diff=Math.floor((now-start)/1000);const h=Math.floor(diff/3600);const m=Math.floor((diff%3600)/60);rt.textContent=(h>0?h+'ч ':'')+(m<10?'0':'')+m+' мин'}
     upd();serverTimer=setInterval(upd,30000);
-  }).catch(()=>{rt.textContent='Ошибка связи'});
+  });
 }
 function getStationName(){return document.getElementById('docStation').value||'ХХ-000'}
 function copyBlank(){if(!charges.length)return;const h6=charges.some(c=>Math.floor(c.artCode/100)===6);let al=charges.map(ch=>`Статья ${ch.artCode} (${LAWS[ch.artCode].name})`).join('\n');const tt=document.getElementById('totalTime').textContent;let sd;if(h6)sd='Пожизненное заключение (пермабриг). Лицо признано врагом корпорации.';else if(tt.includes('ПОЖИЗНЕННОЕ'))sd='Пожизненное заключение.';else if(tt.includes('ПЕРМАБРИГ'))sd=`Заключение на срок ${tt.replace(' (ПЕРМАБРИГ)','')} в пермабриге.`;else sd=`Заключение под стражу на срок ${tt}.`;let ap=getAP();const dn=document.getElementById('docName').value||'(имя и фамилия)';const dr=document.getElementById('docRole').value||'(полное название должности)';const da=document.getElementById('docAccused').value||'(имя и фамилия)';const dar=document.getElementById('docAccusedRole').value||'(полное название должности)';const stn=getStationName();const rtEl=document.getElementById('roundTime');const rtTxt=rtEl.textContent!=='—'&&rtEl.textContent!=='Загрузка...'&&rtEl.textContent!=='Ошибка связи'?rtEl.textContent:'(время)';const bl=`[color=#800080]░░░░░░█████░░░███[/color]\n[color=#800080]░░░░██░░░░░░░░░██[/color] [head=3]Бланк документа[/head]\n[color=#800080]░░░░██░░░░░██░░░█[/color] [head=3]Qillu[/head]\n[color=#800080]█░░░░░░░░░░██░░░░[/color] [bold]${stn} СБ[/bold]\n[color=#800080]██░░░░█████░░░░░░[/color]\n[color=#800080]███░░░░░░░░██░░░░[/color]\n=============================================\n                                  ПРИГОВОР\n=============================================\nВремя и дата: ${rtTxt}\nСоставитель документа: ${dn}\nДолжность составителя: ${dr}\nЯ, ${dn}, в должности ${dr}, выношу приговор согласно данным мне полномочиям в отношении ${da}, в должности ${dar}.\nДанное лицо нарушило следующие статьи Корпоративного Закона:\n${al}\nС учетом всех смягчающих и отягчающих обстоятельств, правовое наказание данного лица представлено в виде:\n${sd}\nАдминистративное наказание:\n${ap}\nСрок заключения под стражу отсчитывается с: (время начала заключения)\n=============================================\n                            [italic]Место для печатей[/italic]`;copyToClipboard(bl).then(()=>{const b=document.getElementById('blankBtn');b.textContent='✓ Скопировано!';b.classList.add('ok');setTimeout(()=>{b.textContent='📋 Скопировать бланк';b.classList.remove('ok')},2000)})}
