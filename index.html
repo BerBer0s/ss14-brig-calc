@@ -124,7 +124,7 @@ footer .ft-nick{color:var(--text3);font-weight:700}footer .ft-sep{color:var(--bo
         <div class="cc-field"><label>ФИО составителя</label><input type="text" class="cc-select" id="docName" placeholder="Имя Фамилия" style="width:100%"></div>
         <div class="cc-field"><label>Должность</label><input type="text" class="cc-select" id="docRole" placeholder="Смотритель" style="width:100%"></div>
         <div class="cc-field"><label>Название станции</label><input type="text" class="cc-select" id="docStation" placeholder="Box XX-000" style="width:100%"></div>
-        <div style="display:flex;gap:8px;align-items:flex-end"><div class="cc-field" style="flex:1"><label>Сервер</label><select class="cc-select" id="docServer" onchange="fetchServerTime()" style="width:100%"><option value="">—</option><option value="spectral">Спектрум</option><option value="venus">Венера</option></select></div><div class="cc-field"><label>Время</label><span class="cc-slider-val" id="roundTime" style="font-size:13px;min-width:auto">—</span></div></div>
+        <div class="cc-field"><label>Время и дата (МСК)</label><input type="text" class="cc-select" id="docTime" style="width:100%"></div>
       </div>
       <div class="rp-body" style="display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--border)">
         <div class="cc-field"><label>ФИО обвиняемого</label><input type="text" class="cc-select" id="docAccused" placeholder="Имя Фамилия" style="width:100%"></div>
@@ -187,49 +187,10 @@ function copyToClipboard(text){
   document.body.appendChild(ta);ta.focus();ta.select();
   try{document.execCommand('copy');return Promise.resolve()}catch(e){return Promise.reject(e)}finally{document.body.removeChild(ta)}
 }
-let serverTimer=null;
-let corsQuietUntil=0;
-async function fetchJsonQuiet(url){
-  if(Date.now()<corsQuietUntil)return null;
-  try{
-    const c=new AbortController();const t=setTimeout(()=>c.abort(),4500);
-    const r=await fetch(url,{cache:'no-store',signal:c.signal});clearTimeout(t);
-    if(!r.ok)return null;return await r.json();
-  }catch(e){
-    const msg=String(e&&e.message||e||'');
-    if(msg.includes('Failed to fetch')||msg.includes('CORS')||msg.includes('blocked')||msg.includes('NetworkError'))corsQuietUntil=Date.now()+60000;
-    return null;
-  }
-}
-async function fetchWithFallback(url){
-  const direct=await fetchJsonQuiet(url);
-  if(direct)return direct;
-  const proxies=['https://corsproxy.io/?','https://api.allorigins.win/raw?url='];
-  for(const p of proxies){
-    try{
-      const r=await fetch(p+encodeURIComponent(url),{cache:'no-store'});
-      if(!r.ok)continue;const t=await r.text();try{return JSON.parse(t)}catch(e){continue}
-    }catch(e){continue}
-  }
-  return null;
-}
-function fetchServerTime(){
-  const srv=document.getElementById('docServer').value;
-  const rt=document.getElementById('roundTime');
-  if(serverTimer){clearInterval(serverTimer);serverTimer=null}
-  if(!srv){rt.textContent='—';return}
-  rt.textContent='Загрузка...';
-  const url='https://server.ss14.org/'+srv+'/status';
-  fetchWithFallback(url).then(d=>{
-    if(!d||!d.round_start_time){rt.textContent='Недоступно';return}
-    const start=new Date(d.round_start_time);
-    function upd(){const now=new Date();const diff=Math.floor((now-start)/1000);const h=Math.floor(diff/3600);const m=Math.floor((diff%3600)/60);rt.textContent=(h>0?h+'ч ':'')+(m<10?'0':'')+m+' мин'}
-    upd();serverTimer=setInterval(upd,30000);
-  });
-}
 function getStationName(){return document.getElementById('docStation').value||'ХХ-000'}
-function copyBlank(){if(!charges.length)return;const h6=charges.some(c=>Math.floor(c.artCode/100)===6);let al=charges.map(ch=>`Статья ${ch.artCode} (${LAWS[ch.artCode].name})`).join('\n');const tt=document.getElementById('totalTime').textContent;let sd;if(h6)sd='Пожизненное заключение (пермабриг). Лицо признано врагом корпорации.';else if(tt.includes('ПОЖИЗНЕННОЕ'))sd='Пожизненное заключение.';else if(tt.includes('ПЕРМАБРИГ'))sd=`Заключение на срок ${tt.replace(' (ПЕРМАБРИГ)','')} в пермабриге.`;else sd=`Заключение под стражу на срок ${tt}.`;let ap=getAP();const dn=document.getElementById('docName').value||'(имя и фамилия)';const dr=document.getElementById('docRole').value||'(полное название должности)';const da=document.getElementById('docAccused').value||'(имя и фамилия)';const dar=document.getElementById('docAccusedRole').value||'(полное название должности)';const stn=getStationName();const rtEl=document.getElementById('roundTime');const rtTxt=rtEl.textContent!=='—'&&rtEl.textContent!=='Загрузка...'&&rtEl.textContent!=='Ошибка связи'?rtEl.textContent:'(время)';const bl=`[color=#800080]░░░░░░█████░░░███[/color]\n[color=#800080]░░░░██░░░░░░░░░██[/color] [head=3]Бланк документа[/head]\n[color=#800080]░░░░██░░░░░██░░░█[/color] [head=3]Qillu[/head]\n[color=#800080]█░░░░░░░░░░██░░░░[/color] [bold]${stn} СБ[/bold]\n[color=#800080]██░░░░█████░░░░░░[/color]\n[color=#800080]███░░░░░░░░██░░░░[/color]\n=============================================\n                                  ПРИГОВОР\n=============================================\nВремя и дата: ${rtTxt}\nСоставитель документа: ${dn}\nДолжность составителя: ${dr}\nЯ, ${dn}, в должности ${dr}, выношу приговор согласно данным мне полномочиям в отношении ${da}, в должности ${dar}.\nДанное лицо нарушило следующие статьи Корпоративного Закона:\n${al}\nС учетом всех смягчающих и отягчающих обстоятельств, правовое наказание данного лица представлено в виде:\n${sd}\nАдминистративное наказание:\n${ap}\nСрок заключения под стражу отсчитывается с: (время начала заключения)\n=============================================\n                            [italic]Место для печатей[/italic]`;copyToClipboard(bl).then(()=>{const b=document.getElementById('blankBtn');b.textContent='✓ Скопировано!';b.classList.add('ok');setTimeout(()=>{b.textContent='📋 Скопировать бланк';b.classList.remove('ok')},2000)})}
+function copyBlank(){if(!charges.length)return;const h6=charges.some(c=>Math.floor(c.artCode/100)===6);let al=charges.map(ch=>`Статья ${ch.artCode} (${LAWS[ch.artCode].name})`).join('\n');const tt=document.getElementById('totalTime').textContent;let sd;if(h6)sd='Пожизненное заключение (пермабриг). Лицо признано врагом корпорации.';else if(tt.includes('ПОЖИЗНЕННОЕ'))sd='Пожизненное заключение.';else if(tt.includes('ПЕРМАБРИГ'))sd=`Заключение на срок ${tt.replace(' (ПЕРМАБРИГ)','')} в пермабриге.`;else sd=`Заключение под стражу на срок ${tt}.`;let ap=getAP();const dn=document.getElementById('docName').value||'(имя и фамилия)';const dr=document.getElementById('docRole').value||'(полное название должности)';const da=document.getElementById('docAccused').value||'(имя и фамилия)';const dar=document.getElementById('docAccusedRole').value||'(полное название должности)';const stn=getStationName();const rtTxt=document.getElementById('docTime').value||'(время и дата)';const bl=`[color=#800080]░░░░░░█████░░░███[/color]\n[color=#800080]░░░░██░░░░░░░░░██[/color] [head=3]Бланк документа[/head]\n[color=#800080]░░░░██░░░░░██░░░█[/color] [head=3]Qillu[/head]\n[color=#800080]█░░░░░░░░░░██░░░░[/color] [bold]${stn} СБ[/bold]\n[color=#800080]██░░░░█████░░░░░░[/color]\n[color=#800080]███░░░░░░░░██░░░░[/color]\n=============================================\n                                  ПРИГОВОР\n=============================================\nВремя и дата: ${rtTxt}\nСоставитель документа: ${dn}\nДолжность составителя: ${dr}\nЯ, ${dn}, в должности ${dr}, выношу приговор согласно данным мне полномочиям в отношении ${da}, в должности ${dar}.\nДанное лицо нарушило следующие статьи Корпоративного Закона:\n${al}\nС учетом всех смягчающих и отягчающих обстоятельств, правовое наказание данного лица представлено в виде:\n${sd}\nАдминистративное наказание:\n${ap}\nСрок заключения под стражу отсчитывается с: (время начала заключения)\n=============================================\n                            [italic]Место для печатей[/italic]`;copyToClipboard(bl).then(()=>{const b=document.getElementById('blankBtn');b.textContent='✓ Скопировано!';b.classList.add('ok');setTimeout(()=>{b.textContent='📋 Скопировать бланк';b.classList.remove('ok')},2000)})}
 function getAP(){const h6=charges.some(c=>Math.floor(c.artCode/100)===6),h5=charges.some(c=>Math.floor(c.artCode/100)===5),h402=charges.some(c=>c.artCode===402),ho=charges.some(c=>c.aggravating==='a5'),tt=document.getElementById('totalTime').textContent;if(h6)return'Увольнение. Враг корпорации.';if(tt.includes('ПОЖИЗНЕННОЕ'))return'Увольнение.';let p=[];if(h402&&ho)p.push('Понижение в должности');else if(h402)p.push('Возможно понижение');if(h5&&ho)p.push('Понижение или увольнение');else if(h5)p.push('Возможно понижение/увольнение');if(!p.length){if(ho)return'На усмотрение руководства (должностное).';return'Не требуется.'}return p.join('. ')+'.'}
 function initCanvas(){const c=document.getElementById('bg-canvas'),ctx=c.getContext('2d');let w,h;function resize(){w=c.width=c.offsetWidth;h=c.height=c.offsetHeight}resize();window.addEventListener('resize',resize);const nodes=[];const sp=80;function rebuildNodes(){nodes.length=0;for(let x=sp/2;x<w;x+=sp)for(let y=sp/2;y<h;y+=sp)nodes.push({ox:x+(Math.random()-.5)*sp*.6,oy:y+(Math.random()-.5)*sp*.6,x:0,y:0,ph:Math.random()*Math.PI*2,amp:Math.random()*3+1,spd:Math.random()*.008+.003,r:Math.random()*1.5+.5,a:Math.random()*.15+.05})}rebuildNodes();window.addEventListener('resize',()=>{resize();rebuildNodes()});let sa=0;function draw(t){ctx.clearRect(0,0,w,h);nodes.forEach(n=>{n.x=n.ox+Math.sin(t*.001*n.spd*60+n.ph)*n.amp;n.y=n.oy+Math.cos(t*.001*n.spd*60+n.ph*.7)*n.amp});for(let i=0;i<nodes.length;i++)for(let j=i+1;j<nodes.length;j++){const dx=nodes[i].x-nodes[j].x,dy=nodes[i].y-nodes[j].y,d=Math.sqrt(dx*dx+dy*dy);if(d<sp*1.3){ctx.beginPath();ctx.moveTo(nodes[i].x,nodes[i].y);ctx.lineTo(nodes[j].x,nodes[j].y);ctx.strokeStyle=`rgba(237,66,69,${.04*(1-d/(sp*1.3))})`;ctx.lineWidth=.5;ctx.stroke()}}nodes.forEach(n=>{ctx.beginPath();ctx.arc(n.x,n.y,n.r,0,Math.PI*2);ctx.fillStyle=`rgba(237,66,69,${n.a})`;ctx.fill()});sa+=.003;const sy=(Math.sin(sa)*.5+.5)*h;const gr=ctx.createLinearGradient(0,sy-40,0,sy+40);gr.addColorStop(0,'rgba(237,66,69,0)');gr.addColorStop(.5,'rgba(237,66,69,.06)');gr.addColorStop(1,'rgba(237,66,69,0)');ctx.fillStyle=gr;ctx.fillRect(0,sy-40,w,80);requestAnimationFrame(draw)}requestAnimationFrame(draw)}
-buildTable();initCanvas();
+function updateMskTime(){const el=document.getElementById('docTime');if(!el)return;const now=new Date();const msk=new Date(now.toLocaleString('en-US',{timeZone:'Europe/Moscow'}));const hh=String(msk.getHours()).padStart(2,'0');const mm=String(msk.getMinutes()).padStart(2,'0');const dd=String(msk.getDate()).padStart(2,'0');const mo=String(msk.getMonth()+1).padStart(2,'0');const yy=msk.getFullYear()+1000;el.value=hh+':'+mm+' '+dd+'.'+mo+'.'+yy}
+buildTable();initCanvas();updateMskTime();setInterval(updateMskTime,60000);
 </script></body></html>
